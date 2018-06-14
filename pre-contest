@@ -1,1 +1,133 @@
+import pandas as pd
+import numpy as np
 
+#读取训练集和测试集，将每个特征值进行命名
+uid_train = pd.read_csv('E:/uid_train.txt',sep='\t',header=None,names=('uid','label'))
+voice_train = pd.read_csv('E:/voice_train.txt',sep='\t',header=None,names=('uid','opp_num','opp_head','opp_len','start_time','end_time','call_type','in_out'),dtype={'start_time':str,'end_time':str})
+sms_train = pd.read_csv('E:/sms_train.txt',sep='\t',header=None,names=('uid','opp_num','opp_head','opp_len','start_time','in_out'),dtype={'start_time':str})
+wa_train = pd.read_csv('E:/wa_train.txt',sep='\t',header=None,names=('uid','wa_name','visit_cnt','visit_dura','up_flow','down_flow','wa_type','date'),dtype={'date':str})
+
+voice_test = pd.read_csv('E:/voice_test_a.txt',sep='\t',header=None,names=('uid','opp_num','opp_head','opp_len','start_time','end_time','call_type','in_out'),dtype={'start_time':str,'end_time':str})
+sms_test = pd.read_csv('E:/sms_test_a.txt',sep='\t',header=None,names=('uid','opp_num','opp_head','opp_len','start_time','in_out'),dtype={'start_time':str})
+wa_test = pd.read_csv('E:/wa_test_a.txt',sep='\t',header=None,names=('uid','wa_name','visit_cnt','visit_dura','up_flow','down_flow','wa_type','date'),dtype={'date':str})
+
+#在测试集中创建一个包含uid列的文件
+uid_test = pd.DataFrame({'uid':pd.unique(wa_test['uid'])})
+uid_test.to_csv('E:/data/uid_test_a.txt',index=None)
+
+#对训练集和测试集进行处理
+voice = pd.concat([voice_train,voice_test],axis=0)
+sms = pd.concat([sms_train,sms_test],axis=0)
+wa = pd.concat([wa_train,wa_test],axis=0)
+
+voice_opp_num = voice.groupby(['uid'])['opp_num'].agg({'unique_count': lambda x: len(pd.unique(x)),'count':'count'}).add_prefix('voice_opp_num_').reset_index()
+
+voice_opp_head=voice.groupby(['uid'])['opp_head'].agg({'unique_count': lambda x: len(pd.unique(x))}).add_prefix('voice_opp_head_').reset_index()
+
+voice_opp_len=voice.groupby(['uid','opp_len'])['uid'].count().unstack().add_prefix('voice_opp_len_').reset_index().fillna(0)
+
+voice_call_type = voice.groupby(['uid','call_type'])['uid'].count().unstack().add_prefix('voice_call_type_').reset_index().fillna(0)
+
+voice_in_out = voice.groupby(['uid','in_out'])['uid'].count().unstack().add_prefix('voice_in_out_').reset_index().fillna(0)
+
+sms_opp_num = sms.groupby(['uid'])['opp_num'].agg({'unique_count': lambda x: len(pd.unique(x)),'count':'count'}).add_prefix('sms_opp_num_').reset_index()
+
+sms_opp_head=sms.groupby(['uid'])['opp_head'].agg({'unique_count': lambda x: len(pd.unique(x))}).add_prefix('sms_opp_head_').reset_index()
+
+sms_opp_len=sms.groupby(['uid','opp_len'])['uid'].count().unstack().add_prefix('sms_opp_len_').reset_index().fillna(0)
+
+
+sms_in_out = sms.groupby(['uid','in_out'])['uid'].count().unstack().add_prefix('sms_in_out_').reset_index().fillna(0)
+
+wa_name = wa.groupby(['uid'])['wa_name'].agg({'unique_count': lambda x: len(pd.unique(x)),'count':'count'}).add_prefix('wa_name_').reset_index()
+visit_cnt = wa.groupby(['uid'])['visit_cnt'].agg(['std','max','min','median','mean','sum']).add_prefix('wa_visit_cnt_').reset_index()
+
+visit_dura = wa.groupby(['uid'])['visit_dura'].agg(['std','max','min','median','mean','sum']).add_prefix('wa_visit_dura_').reset_index()
+
+
+up_flow = wa.groupby(['uid'])['up_flow'].agg(['std','max','min','median','mean','sum']).add_prefix('wa_up_flow_').reset_index()
+
+down_flow = wa.groupby(['uid'])['down_flow'].agg(['std','max','min','median','mean','sum']).add_prefix('wa_down_flow_').reset_index()
+
+feature = [voice_opp_num,voice_opp_head,voice_opp_len,voice_call_type,voice_in_out,sms_opp_num,sms_opp_head,sms_opp_len,sms_in_out,wa_name,visit_cnt,visit_dura,up_flow,
+           down_flow]
+           
+train_feature = uid_train
+for feat in feature:
+    train_feature=pd.merge(train_feature,feat,how='left',on='uid')
+    
+test_feature = uid_test
+for feat in feature:
+    test_feature=pd.merge(test_feature,feat,how='left',on='uid')
+ 
+#将处理后的包含新的特征值的训练集和测试集，写入新的文件中
+train_feature.to_csv('E:/data/train_featureV1.csv',index=None)
+test_feature.to_csv('E:/data/test_featureV1.csv',index=None)
+
+
+
+
+
+#训练模型，使用最新的lightgbm模型
+import pandas as pd
+import numpy as np
+import lightgbm as lgb
+from sklearn import metrics
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+train = pd.read_csv('E:/data/train_featureV1.csv', header=0)
+test = pd.read_csv('E:/data/test_featureV.csv',header=0)
+
+dtrain = lgb.Dataset(train.drop(['uid','label'],axis=1),label=train.label)
+dtest = lgb.Dataset(test.drop(['uid'],axis=1))
+
+
+#lightgbm的参数
+lgb_params =  {
+    'boosting_type': 'gbdt',
+    'objective': 'binary',
+#    'metric': ('multi_logloss', 'multi_error'),
+    #'metric_freq': 100,
+    'is_training_metric': False,
+    'min_data_in_leaf': 12,
+    'num_leaves': 100,
+    'learning_rate': 0.05,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.8,
+    'verbosity':-1,
+#    'gpu_device_id':2,
+#    'device':'gpu'
+#    'lambda_l1': 0.001,
+#    'skip_drop': 0.95,
+#    'max_drop' : 10
+    #'lambda_l2': 0.005
+    #'num_threads': 18
+}
+
+def evalMetric(preds,dtrain):
+    
+    label = dtrain.get_label()
+    pre = pd.DataFrame({'preds':preds,'label':label})
+    pre= pre.sort_values(by='preds',ascending=False)   
+    auc = metrics.roc_auc_score(pre.label,pre.preds)
+    pre.preds=pre.preds.map(lambda x: 1 if x>=0.5 else 0)
+    f1 = metrics.f1_score(pre.label,pre.preds)
+    res = 0.6*auc +0.4*f1   
+    return 'res',res,Truelgb.cv(lgb_params,dtrain,feval=evalMetric,early_stopping_rounds=100,verbose_eval=5,num_boost_round=10000,nfold=3,metrics=['evalMetric'])
+    
+    
+    
+lgb.cv(lgb_params,dtrain,feval=evalMetric,early_stopping_rounds=100,verbose_eval=5,num_boost_round=10000,nfold=3,metrics=['evalMetric'])
+    
+model =lgb.train(lgb_params,dtrain,feval=evalMetric,verbose_eval=5,num_boost_round=300,valid_sets=[dtrain])
+    
+pred=model.predict(test.drop(['uid'],axis=1))
+    
+res =pd.DataFrame({'uid':test.uid,'label':pred})
+    
+res=res.sort_values(by='label',ascending=False)
+res.label=res.label.map(lambda x: 1 if x>=0.5 else 0)
+res.label = res.label.map(lambda x: int(x))
+
+res.to_csv('E:/data/lgb-baseline-1.csv',index=False,header=False,sep=',',columns=['uid','label'])
