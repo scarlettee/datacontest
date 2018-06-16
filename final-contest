@@ -61,8 +61,8 @@ for feat in feature:
     test_feature=pd.merge(test_feature,feat,how='left',on='uid')
  
 #将处理后的包含新的特征值的训练集和测试集，写入新的文件中
-train_feature.to_csv('E:/data/train_featureV1.csv',index=None)
-test_feature.to_csv('E:/data/test_featureV1.csv',index=None)
+train_feature.to_csv('E:/data/train_featureV2.csv',index=None)
+test_feature.to_csv('E:/data/test_featureV2.csv',index=None)
 
 
 
